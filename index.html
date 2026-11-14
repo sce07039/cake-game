@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>케이크 꾸미기</title>
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+<style>
+:root{--pink:#e0187f;--soft:#fde6f2;--card:#fff;--line:#ffc2df;--ink:#7a1650}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%;font-family:'Jua','Apple SD Gothic Neo',sans-serif;color:var(--ink);
+  background:#fff0f8 radial-gradient(circle,#9fe6ea 2px,transparent 2.5px) 0 0/28px 28px}
+.app{max-width:420px;margin:0 auto;padding:12px;padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}
+.card{background:var(--card);border:3px solid var(--line);border-radius:22px;padding:12px;box-shadow:0 0 0 4px #fff,0 0 0 6px var(--line)}
+.top{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.logo{flex:1;font-size:26px;color:var(--pink);letter-spacing:.5px}
+button{font:inherit;cursor:pointer;border:0}
+.pbtn{background:var(--pink);color:#fff;border-radius:10px;padding:9px 14px;font-size:16px}
+.pbtn.sm{padding:9px 11px}
+.stage{background:var(--soft);border-radius:16px;padding:6px;touch-action:none}
+canvas#cv{width:100%;height:auto;display:block;touch-action:none}
+.tabs{display:flex;gap:6px;margin:12px 0 8px}
+.tab{flex:1;background:#fff;border:2px solid var(--line);border-radius:10px;padding:8px 0;font-size:14px;color:var(--ink)}
+.tab[aria-selected=true]{background:var(--pink);border-color:var(--pink);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;min-height:96px}
+.item{background:#fff;border:3px solid var(--line);border-radius:14px;padding:8px 2px;font-size:15px;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--ink)}
+.item[aria-pressed=true]{border-color:var(--pink);background:#ffd9ec}
+.item .ic{font-size:30px;line-height:1}
+.sw{width:34px;height:34px;border-radius:50%;border:2px solid #0002}
+textarea{grid-column:1/-1;width:100%;height:96px;border:3px solid var(--line);border-radius:14px;padding:10px;font:inherit;font-size:16px;color:var(--ink);resize:none}
+.hint{grid-column:1/-1;font-size:14px;margin:0;opacity:.8}
+.del{grid-column:1/-1;background:#fff;border:2px dashed var(--pink);color:var(--pink);border-radius:12px;padding:8px}
+.center{text-align:center}
+.load{height:420px;display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--pink)}
+#out{width:100%;border-radius:14px;display:block}
+.row{display:flex;gap:8px;margin-top:12px}.row .pbtn{flex:1;font-size:17px;padding:12px}
+.ghost{background:#fff!important;color:var(--pink)!important;border:2px solid var(--pink)!important}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="app">
+ <div class="card" id="edit">
+  <div class="top">
+   <div class="logo">Cake Party</div>
+   <button class="pbtn sm" id="reset" aria-label="처음부터 다시">↻</button>
+   <button class="pbtn" id="done">완성</button>
+  </div>
+  <div class="stage"><canvas id="cv" width="720" height="720"></canvas></div>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <div class="grid" id="panel"></div>
+ </div>
+ <div class="card center" id="loading" hidden><div class="load">Loading...</div></div>
+ <div class="card" id="result" hidden>
+  <img id="out" alt="완성된 케이크">
+  <div class="row">
+   <button class="pbtn ghost" id="back">다시 꾸미기</button>
+   <button class="pbtn" id="save">사진 저장</button>
+  </div>
+  <p class="center" style="font-size:14px;margin:10px 0 0">저장이 안 되면 사진을 길게 눌러 저장하세요</p>
+ </div>
+</div>
+
+<script>
+/* ===== 데이터 (여기만 고치면 메뉴가 바뀌어요) ===== */
+const SHAPES  = [{id:'heart',name:'하트',ic:'💗'},{id:'circle',name:'원',ic:'⚪'},{id:'square',name:'네모',ic:'⬜'}];
+const FLAVORS = [{id:'mango',name:'망고',c:'#ffc83d',ic:'🥭'},{id:'choco',name:'초코',c:'#6b4226',ic:'🍫'},{id:'cheese',name:'치즈',c:'#ffe9a8',ic:'🧀'}];
+const CREAMS  = [{id:'pale',name:'pale yellow',c:'#fff3b0'},{id:'choco',name:'chocolate',c:'#5a3a29'},{id:'fresh',name:'생크림',c:'#fffdf7'}];
+const PARTS   = ['🍓','🍒','🍑','🍋','🫐','🌸','⭐','💖','🕯️','🍬','🍪','🎀'];
+const TABS    = ['시트','맛','크림','파츠','편지'];
+
+const S = {shape:'circle',flavor:'mango',cream:'fresh',parts:[],msg:'',sel:null,tab:0};
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+
+/* ===== 케이크 그리기 (360x360 좌표를 2배로 그림) ===== */
+function shapePath(c, k){            // 중심이 (0,0)인 모양
+  c.beginPath();
+  if(S.shape==='circle'){ c.arc(0,0,128*k,0,Math.PI*2); }
+  else if(S.shape==='square'){ const s=240*k; c.roundRect(-s/2,-s/2,s,s,28*k); }
+  else { const h=1.45*k;
+    c.moveTo(0,70*h); c.bezierCurveTo(-130*h,-10*h,-75*h,-105*h,0,-42*h);
+    c.bezierCurveTo(75*h,-105*h,130*h,-10*h,0,70*h); c.closePath(); }
+}
+function drawCake(c, showSel){
+  c.save(); c.setTransform(2,0,0,2,0,0);
+  c.clearRect(0,0,360,360);
+  c.translate(180,188);
+  const fl = FLAVORS.find(f=>f.id===S.flavor).c, cr = CREAMS.find(f=>f.id===S.cream).c;
+  c.save(); c.translate(0,10); c.fillStyle='rgba(224,24,127,.12)'; shapePath(c,1.08); c.fill(); c.restore(); // 접시 그림자
+  c.fillStyle='#fff'; shapePath(c,1.1); c.fill();                      // 접시
+  c.fillStyle=fl; shapePath(c,1); c.fill();                           // 시트
+  c.fillStyle=cr; shapePath(c,.86); c.fill();                         // 크림
+  c.strokeStyle='rgba(0,0,0,.08)'; c.lineWidth=2; c.stroke();
+  c.strokeStyle=cr; c.lineWidth=16; c.lineCap='round'; c.lineJoin='round';
+  c.setLineDash([0,19]); shapePath(c,.97); c.stroke(); c.setLineDash([]);  // 크림 물방울 테두리
+  c.translate(-180,-188);
+  c.font='36px sans-serif'; c.textAlign='center'; c.textBaseline='middle';
+  S.parts.forEach((p,i)=>{
+    c.fillText(p.e,p.x,p.y);
+    if(showSel && i===S.sel){ c.strokeStyle='#e0187f'; c.lineWidth=2; c.setLineDash([5,4]);
+      c.beginPath(); c.arc(p.x,p.y,24,0,Math.PI*2); c.stroke(); c.setLineDash([]); }
+  });
+  c.restore();
+}
+const render = () => drawCake(ctx,true);
+
+/* ===== 탭 / 아이템 목록 ===== */
+function renderTabs(){
+  $('tabs').innerHTML = TABS.map((t,i)=>`<button class="tab" role="tab" aria-selected="${i===S.tab}" data-tab="${i}">${t}</button>`).join('');
+}
+function renderPanel(){
+  const p = $('panel'); let h='';
+  if(S.tab===0) h = SHAPES.map(o=>`<button class="item" aria-pressed="${S.shape===o.id}" data-k="shape" data-v="${o.id}"><span class="ic">${o.ic}</span>${o.name}</button>`).join('');
+  if(S.tab===1) h = FLAVORS.map(o=>`<button class="item" aria-pressed="${S.flavor===o.id}" data-k="flavor" data-v="${o.id}"><span class="sw" style="background:${o.c}"></span>${o.name}</button>`).join('');
+  if(S.tab===2) h = CREAMS.map(o=>`<button class="item" aria-pressed="${S.cream===o.id}" data-k="cream" data-v="${o.id}"><span class="sw" style="background:${o.c}"></span>${o.name}</button>`).join('');
+  if(S.tab===3) h = `<p class="hint">누르면 케이크에 올라가요. 케이크 위에서 끌어서 옮겨요!</p>`
+    + PARTS.map(e=>`<button class="item" data-part="${e}"><span class="ic">${e}</span></button>`).join('')
+    + `<button class="del" id="del">선택한 파츠 지우기</button>`;
+  if(S.tab===4) h = `<textarea id="msg" maxlength="120" placeholder="생일 축하 편지를 써보세요 (최대 120자)">${S.msg}</textarea>`;
+  p.innerHTML = h;
+  if(S.tab===4) $('msg').oninput = e => S.msg = e.target.value;
+}
+$('tabs').onclick = e => { const b=e.target.closest('[data-tab]'); if(!b) return; S.tab=+b.dataset.tab; renderTabs(); renderPanel(); };
+$('panel').onclick = e => {
+  const o=e.target.closest('.item[data-k]');
+  if(o){ S[o.dataset.k]=o.dataset.v; renderPanel(); render(); return; }
+  const pt=e.target.closest('[data-part]');
+  if(pt){ S.parts.push({e:pt.dataset.part,x:150+Math.random()*60,y:150+Math.random()*60}); S.sel=S.parts.length-1; render(); return; }
+  if(e.target.id==='del' && S.sel!==null){ S.parts.splice(S.sel,1); S.sel=null; render(); }
+};
+
+/* ===== 파츠 끌어서 옮기기 ===== */
+let drag=null;
+const pos = e => { const r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)*360/r.width, y:(e.clientY-r.top)*360/r.height}; };
+cv.addEventListener('pointerdown', e=>{
+  const m=pos(e); let hit=-1;
+  for(let i=S.parts.length-1;i>=0;i--){ if(Math.hypot(S.parts[i].x-m.x,S.parts[i].y-m.y)<26){hit=i;break;} }
+  S.sel = hit<0 ? null : hit;
+  if(hit>=0){ drag={dx:S.parts[hit].x-m.x,dy:S.parts[hit].y-m.y}; cv.setPointerCapture(e.pointerId); }
+  render();
+});
+cv.addEventListener('pointermove', e=>{
+  if(!drag||S.sel===null) return; const m=pos(e), p=S.parts[S.sel];
+  p.x=Math.max(10,Math.min(350,m.x+drag.dx)); p.y=Math.max(10,Math.min(350,m.y+drag.dy)); render();
+});
+cv.addEventListener('pointerup', ()=>{ drag=null; });
+
+/* ===== 완성 → 로딩 → 결과 이미지 만들기 ===== */
+function wrap(c, text, maxW){
+  const lines=[]; text.split('\n').forEach(par=>{ let l='';
+    for(const ch of par){ if(c.measureText(l+ch).width>maxW){lines.push(l);l=ch;} else l+=ch; }
+    lines.push(l); }); return lines;
+}
+function makeImage(){
+  const W=720, H=1100, cx=document.createElement('canvas'); cx.width=W; cx.height=H;
+  const c=cx.getContext('2d');
+  c.fillStyle='#ffe3f1'; c.fillRect(0,0,W,H);
+  c.fillStyle='#e0187f'; c.font='54px Jua, sans-serif'; c.textAlign='center'; c.textBaseline='alphabetic';
+  c.fillText('Happy Birthday!',W/2,90);
+  const t=document.createElement('canvas'); t.width=t.height=720; drawCake(t.getContext('2d'),false);
+  c.drawImage(t,0,110,720,720);
+  if(S.msg.trim()){
+    c.fillStyle='#fff'; c.beginPath(); c.roundRect(50,810,620,250,26); c.fill();
+    c.strokeStyle='#ffc2df'; c.lineWidth=4; c.stroke();
+    c.fillStyle='#7a1650'; c.font='32px Jua, sans-serif'; c.textAlign='left';
+    wrap(c,S.msg.trim(),560).slice(0,5).forEach((l,i)=>c.fillText(l,80,870+i*44));
+  }
+  return cx;
+}
+let outCanvas=null;
+$('done').onclick = async ()=>{
+  $('edit').hidden=true; $('loading').hidden=false;
+  try{ await document.fonts.load('32px Jua'); }catch(_){}
+  outCanvas = makeImage();
+  setTimeout(()=>{ $('out').src=outCanvas.toDataURL('image/png'); $('loading').hidden=true; $('result').hidden=false; window.scrollTo(0,0); },1200);
+};
+$('back').onclick = ()=>{ $('result').hidden=true; $('edit').hidden=false; };
+$('reset').onclick = ()=>{ if(confirm('처음부터 다시 만들까요?')){ Object.assign(S,{shape:'circle',flavor:'mango',cream:'fresh',parts:[],msg:'',sel:null,tab:0}); renderTabs(); renderPanel(); render(); } };
+
+/* ===== 사진 저장 ===== */
+$('save').onclick = ()=> outCanvas.toBlob(async blob=>{
+  const file = new File([blob],'my-cake.png',{type:'image/png'});
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file]}); return; }catch(e){ if(e.name==='AbortError') return; }
+  }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='my-cake.png'; a.click();
+});
+
+renderTabs(); renderPanel(); render();
+</script>
+</body>
+</html>
